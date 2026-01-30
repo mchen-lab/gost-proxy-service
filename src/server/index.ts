@@ -45,6 +45,7 @@ const appKit = createApp({
   appName: "Gost Proxy Service",
   defaultConfig: defaultConfig,
   disableStatic: true, // We serve our own static files
+  recreateMissingConfig: true,
 });
 
 const app = appKit.app;
