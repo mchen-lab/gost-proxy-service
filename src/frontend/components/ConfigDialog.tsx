@@ -6,6 +6,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogClose,
   DialogTrigger,
   DialogFooter,
 } from "@/components/ui/dialog";
@@ -164,7 +165,12 @@ export function ConfigDialog({
           </div>
         )}
 
-        <DialogFooter className="mt-4">
+        <DialogFooter className="mt-4 gap-2">
+          <DialogClose asChild>
+            <Button variant="outline" className="cursor-pointer">
+              Cancel
+            </Button>
+          </DialogClose>
           <Button 
             type="submit" 
             onClick={handleSave} 
