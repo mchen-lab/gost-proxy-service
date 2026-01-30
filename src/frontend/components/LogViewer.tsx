@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { CheckCircle2, XCircle } from "lucide-react";
 
 /**
  * Log entry structure for the LogViewer.
@@ -10,6 +11,7 @@ export interface LogEntry {
   timestamp: string;
   level: string;  // INFO, WARN, ERROR, DEBUG, or custom levels
   message: string;
+  success?: boolean;
 }
 
 interface LogViewerProps {
@@ -233,7 +235,16 @@ export function LogViewer({
                   <span className={`shrink-0 font-bold w-12 text-center text-[10px] rounded px-1 self-start mt-0.5 ${getLevelStyle(log.level)}`}>
                     {renderLevelLabel(log.level)}
                   </span>
-                  <span className="text-slate-300 break-all">{log.message}</span>
+                  <span className="text-slate-300 break-all flex-1">{log.message}</span>
+                  {log.success !== undefined && (
+                    <span className="shrink-0 ml-1">
+                      {log.success ? (
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5 text-red-500" />
+                      )}
+                    </span>
+                  )}
                 </div>
               ))
             )}

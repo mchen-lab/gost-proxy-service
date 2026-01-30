@@ -201,6 +201,17 @@ function App() {
             success: prev.success + (result.success ? 1 : 0),
             fail: prev.fail + (result.success ? 0 : 1)
           }));
+
+          // Broadcast result to logs
+          fetch("/api/logs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              message: `${result.success ? '✅' : '❌'} ${result.site}: ${result.success ? (result.ip || 'OK') : (result.error || 'Failed')} (${result.time}ms)`,
+              level: "GOST",
+              success: result.success
+            })
+          }).catch(() => {});
         } catch { }
         if (!abortRef.current) setTimeout(runNext, 500);
       };

@@ -68,6 +68,7 @@ interface LogEntry {
   timestamp: string;
   level: string;
   message: string;
+  success?: boolean;
 }
 
 const logs: LogEntry[] = [];
@@ -363,6 +364,20 @@ app.get("/api/gost-status", async (_req, res) => {
 
 // Logs
 app.get("/api/logs", (_req, res) => res.json({ logs }));
+app.post("/api/logs", (req: Request, res: Response) => {
+  const { message, level, success } = req.body;
+  if (!message) {
+    res.status(400).json({ error: "Message is required" });
+    return;
+  }
+  broadcastLog({
+    timestamp: new Date().toISOString(),
+    level: level || "INFO",
+    message,
+    success
+  });
+  res.json({ success: true });
+});
 app.delete("/api/logs", (_req, res) => { logs.length = 0; res.json({ success: true }); });
 
 // Proxy Test endpoint
