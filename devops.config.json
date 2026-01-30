@@ -6,5 +6,5 @@
   "imageName": "gost-proxy-service",
   "containerName": "gost-proxy-service",
   "volumeName": "gost_proxy_service_data",
-  "ports": [31131]
+  "ports": [31130, 31131]
 }
