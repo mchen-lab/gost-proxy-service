@@ -64,33 +64,35 @@ function App() {
   const [showAbout, setShowAbout] = useState(false);
   const TEST_DURATION_LIMIT = 2 * 60 * 1000;
 
+  const fetchURLs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/test-urls");
+      if (res.ok) {
+        const data = await res.json();
+        setTestUrls(data.urls || []);
+      }
+    } catch {
+      console.warn("Failed to fetch test URLs");
+    }
+  }, []);
+
   const fetchStatus = useCallback(async () => {
     try {
-      const results = await Promise.allSettled([
-        fetch("/api/gost-status"),
-        fetch("/api/test-urls")
-      ]);
-
-      const statusRes = results[0].status === 'fulfilled' ? results[0].value : null;
-      const urlsRes = results[1].status === 'fulfilled' ? results[1].value : null;
-
-      if (statusRes?.ok) {
-        const data = await statusRes.json();
+      const res = await fetch("/api/gost-status");
+      if (res.ok) {
+        const data = await res.json();
         setStatus(data);
       } else {
         setStatus(prev => ({ ...prev, online: false }));
-      }
-
-      if (urlsRes?.ok) {
-        try {
-          const data = await urlsRes.json();
-          setTestUrls(data.urls || []);
-        } catch { console.warn("Failed to parse test URLs"); }
       }
     } catch {
       setStatus({ online: false, proxyServiceReady: false, proxyCount: 0 });
     }
   }, []);
+
+  useEffect(() => {
+    fetchURLs();
+  }, [fetchURLs]);
 
   useEffect(() => {
     fetchStatus();
@@ -285,7 +287,7 @@ function App() {
             </div>
 
             <div className="flex items-center gap-1">
-              <SettingsDialog onConfigUpdate={() => { fetchStatus(); refreshSettings(); }} />
+              <SettingsDialog onConfigUpdate={() => { fetchStatus(); fetchURLs(); refreshSettings(); }} />
               <Button 
                 variant="ghost" 
                 size="icon" 
