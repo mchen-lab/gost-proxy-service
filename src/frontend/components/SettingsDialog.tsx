@@ -25,6 +25,14 @@ export function SettingsDialog({ onConfigUpdate }: SettingsDialogProps) {
   });
   const [proxyText, setProxyText] = useState("");
   const [testUrlsText, setTestUrlsText] = useState("");
+  const [hasFetched, setHasFetched] = useState(false);
+
+  useEffect(() => {
+    if (!hasFetched) {
+      fetchData();
+      setHasFetched(true);
+    }
+  }, [hasFetched]);
 
   const fetchData = async () => {
     try {

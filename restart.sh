@@ -37,8 +37,8 @@ kill_port() {
 
     echo "Checking for existing $process_name processes on port $port..."
     
-    # use lsof to get PIDs - remove LISTEN filter to catch processes in transition
-    local pids=$(lsof -ti :$port 2>/dev/null)
+    # use lsof to get PIDs - only target the listener to avoid conflicts with persistent client connections (e.g. Chrome)
+    local pids=$(lsof -nP -i :$port -sTCP:LISTEN -t 2>/dev/null)
     
     if [ ! -z "$pids" ]; then
         # Iterate through PIDs to check their command name
