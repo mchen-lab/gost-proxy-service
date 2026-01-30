@@ -86,7 +86,8 @@ else
     docker buildx use "$BUILDER_NAME"
 fi
 
-BUILD_META="-dev-$(date +%Y%m%d)"
+PKG_VERSION=$(node -p "require('./package.json').version")
+BUILD_META="${PKG_VERSION}-dev-$(date +%Y%m%d)"
 COMMIT_HASH=$(git rev-parse --short HEAD 2>/dev/null || echo "unknown")
 
 docker buildx build \
