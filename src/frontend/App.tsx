@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppKit } from "@mchen-lab/app-kit/frontend";
-import { VersionBanner } from "@mchen-lab/app-kit/components";
+import { VersionBanner, AboutDialog } from "@mchen-lab/app-kit/components";
 import { SystemStatus } from "./components/SystemStatus";
 import { LogViewer } from "./components/LogViewer";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -61,6 +61,7 @@ function App() {
   const abortRef = useRef(false);
   const isTestingRef = useRef(false);
   const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [showAbout, setShowAbout] = useState(false);
   const TEST_DURATION_LIMIT = 2 * 60 * 1000;
 
   const fetchStatus = useCallback(async () => {
@@ -285,43 +286,28 @@ function App() {
 
             <div className="flex items-center gap-1">
               <SettingsDialog onConfigUpdate={() => { fetchStatus(); refreshSettings(); }} />
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground cursor-pointer">
-                    <Info className="h-4 w-4" />
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>About GOST Proxy Service</DialogTitle>
-                    <DialogDescription>
-                      Professional management interface for GOST forwarding chains.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="space-y-4 py-4">
-                    <VersionBanner
-                      version={version?.version}
-                      commit={version?.commit}
-                      appName="Gost Proxy Service"
-                    />
-                    <div className="flex justify-between pt-2">
-                      <span className="text-sm text-muted-foreground">Repository</span>
-                      <a
-                        href="https://github.com/mchen-lab/gost-proxy-service"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-primary hover:underline cursor-pointer"
-                      >
-                        mchen-lab/gost-proxy-service
-                      </a>
-                    </div>
-                  </div>
-                </DialogContent>
-              </Dialog>
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="h-9 w-9 text-muted-foreground hover:text-foreground cursor-pointer"
+                onClick={() => setShowAbout(true)}
+              >
+                <Info className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </div>
       </header>
+
+      <AboutDialog
+        isOpen={showAbout}
+        onOpenChange={setShowAbout}
+        appName="Gost Proxy Service"
+        version={version?.version}
+        commit={version?.commit}
+        repoUrl="https://github.com/mchen-lab/gost-proxy-service"
+        description="Professional management interface for GOST forwarding chains. Powered by @mchen-lab/app-kit."
+      />
 
       <main className="max-w-7xl mx-auto p-6">
         <div className="flex flex-col gap-6 h-[calc(100vh-140px)]">
