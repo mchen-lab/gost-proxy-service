@@ -38,8 +38,14 @@ RUN npm run build:server
 # Production stage
 FROM node:20-alpine AS production
 
-# Install basic tools
-RUN apk add --no-cache ca-certificates
+# Install basic tools and GOST
+RUN apk add --no-cache ca-certificates curl tar
+
+# Download and install GOST v3
+# We use the official binary for linux/amd64 (or match alpine's architecture)
+RUN curl -L https://github.com/go-gost/gost/releases/download/v3.0.0-rc.10/gost_3.0.0-rc.10_linux_amd64.tar.gz | tar -xz && \
+    mv gost /usr/local/bin/gost && \
+    chmod +x /usr/local/bin/gost
 
 WORKDIR /app
 
@@ -59,12 +65,16 @@ RUN npm ci --only=production
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/dist-server ./dist-server
 
-# Expose port
-EXPOSE 31131
+# Expose all three ports
+EXPOSE 31130 31131 31132
 
 # Set environment variables
 ENV NODE_ENV=production
-ENV PORT=31131
+ENV PORT=31130
+ENV GOST_API_URL=http://127.0.0.1:31132
+ENV GOST_PROXY_URL=http://127.0.0.1:31131
+ENV GOST_BINARY_PATH=/usr/local/bin/gost
+
 # Also pass build info to production for runtime API
 ARG GIT_COMMIT
 ARG BUILD_METADATA

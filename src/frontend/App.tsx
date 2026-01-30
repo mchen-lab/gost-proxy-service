@@ -1,41 +1,362 @@
-import React, { useEffect, useState } from "react";
-import Markdown from 'react-markdown';
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppKit } from "@mchen-lab/app-kit/frontend";
-import { Layout } from "./components/Layout";
-import { StatusCard } from "./components/StatusCard";
-import { Card, CardContent } from "./components/ui/card";
+import { VersionBanner } from "@mchen-lab/app-kit/components";
+import { SystemStatus } from "./components/SystemStatus";
+import { LogViewer } from "./components/LogViewer";
+import { SettingsDialog } from "./components/SettingsDialog";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { Toaster } from "@/components/ui/sonner";
+import { toast } from "sonner";
+import { Info, Play, Square, RotateCw, Activity, Loader2 } from "lucide-react";
+
+interface Status {
+  online: boolean;
+  proxyServiceReady: boolean;
+  proxyCount: number;
+  gost?: {
+    running: boolean;
+    pid: number | null;
+  };
+}
+
+interface TestResult {
+  site: string;
+  success: boolean;
+  ip?: string;
+  time: number;
+  error?: string;
+}
 
 function App() {
-  const { version, loading, error } = useAppKit();
-  const [docs, setDocs] = useState<string>("");
+  const { version, settings: globalSettings, refreshSettings } = useAppKit();
+  const [status, setStatus] = useState<Status>({
+    online: false,
+    proxyServiceReady: false,
+    proxyCount: 0,
+  });
 
-  useEffect(() => {
-    fetch("/api/docs")
-      .then(res => res.json())
-      .then(data => setDocs(data.content || ""))
-      .catch(() => setDocs("Failed to load documentation."));
+  // Test Runner State
+  const [testUrls, setTestUrls] = useState<string[]>([]);
+  const [testStats, setTestStats] = useState({ total: 0, success: 0, fail: 0 });
+  const [isTesting, setIsTesting] = useState(false);
+  const [showNoProxiesAlert, setShowNoProxiesAlert] = useState(false);
+  const abortRef = useRef(false);
+  const isTestingRef = useRef(false);
+  const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const TEST_DURATION_LIMIT = 2 * 60 * 1000;
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      const results = await Promise.allSettled([
+        fetch("/api/gost-status"),
+        fetch("/api/test-urls")
+      ]);
+
+      const statusRes = results[0].status === 'fulfilled' ? results[0].value : null;
+      const urlsRes = results[1].status === 'fulfilled' ? results[1].value : null;
+
+      if (statusRes?.ok) {
+        const data = await statusRes.json();
+        setStatus(data);
+      } else {
+        setStatus(prev => ({ ...prev, online: false }));
+      }
+
+      if (urlsRes?.ok) {
+        try {
+          const data = await urlsRes.json();
+          setTestUrls(data.urls || []);
+        } catch { console.warn("Failed to parse test URLs"); }
+      }
+    } catch {
+      setStatus({ online: false, proxyServiceReady: false, proxyCount: 0 });
+    }
   }, []);
 
-  return (
-    <Layout>
-      <StatusCard 
-        port="31131"
-        items={[
-          { label: "Version", value: version?.version || "..." },
-          { label: "Commit", value: version?.commit || "..." }
-        ]}
-      />
+  useEffect(() => {
+    fetchStatus();
+    const interval = setInterval(fetchStatus, 5000);
+    return () => clearInterval(interval);
+  }, [fetchStatus]);
 
-      <div className="grid gap-6 grid-cols-1">
-        <Card>
-          <CardContent className="p-6 md:p-10">
-            <article className="prose prose-slate max-w-none">
-              <Markdown>{docs}</Markdown>
-            </article>
-          </CardContent>
-        </Card>
-      </div>
-    </Layout>
+  const stopTest = useCallback(async () => {
+    if (abortRef.current) return;
+    abortRef.current = true;
+    isTestingRef.current = false;
+    setIsTesting(false);
+    if (testTimeoutRef.current) {
+      clearTimeout(testTimeoutRef.current);
+      testTimeoutRef.current = null;
+    }
+    fetch("/api/logs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: "🛑 Testing stopped", level: "INFO" })
+    }).catch(() => {});
+  }, []);
+
+  const handleServiceAction = async (action: "start" | "stop" | "restart") => {
+    if (isTesting && (action === "stop" || action === "restart")) {
+      stopTest();
+    }
+
+    if (action === "restart") {
+      setTestStats({ total: 0, success: 0, fail: 0 });
+    }
+
+    const actionMap = { start: "Starting", stop: "Stopping", restart: "Restarting" };
+    const successMap = { start: "Started", stop: "Stopped", restart: "Restarted" };
+
+    const promise = async () => {
+      const res = await fetch(`/api/service/${action}`, { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      await fetchStatus();
+    };
+
+    toast.promise(promise(), {
+      loading: `${actionMap[action]} proxy service...`,
+      success: `${successMap[action]} service successfully`,
+      error: `Failed to ${action} service`,
+    });
+  };
+
+  const startTest = useCallback(async () => {
+    if (isTestingRef.current) return;
+    isTestingRef.current = true;
+
+    if (status.proxyCount === 0) {
+      isTestingRef.current = false;
+      setShowNoProxiesAlert(true);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/test-urls");
+      const data = await res.json();
+      const urls = data.urls || [];
+      if (urls.length === 0) {
+        isTestingRef.current = false;
+        toast.error("No test URLs configured");
+        return;
+      }
+
+      setIsTesting(true);
+      abortRef.current = false;
+      setTestStats({ total: 0, success: 0, fail: 0 });
+
+      fetch("/api/logs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message: `🚀 Testing started (${urls.length} URLs)`, level: "INFO" })
+      }).catch(() => {});
+
+      if (testTimeoutRef.current) clearTimeout(testTimeoutRef.current);
+      testTimeoutRef.current = setTimeout(() => {
+        if (!abortRef.current) {
+          abortRef.current = true;
+          setIsTesting(false);
+          toast.info("Testing stopped after 2 minutes");
+        }
+      }, TEST_DURATION_LIMIT);
+
+      let siteIndex = 0;
+      const runNext = async () => {
+        if (abortRef.current) return;
+        const url = urls[siteIndex % urls.length];
+        const name = new URL(url).hostname;
+        siteIndex++;
+        const start = Date.now();
+        try {
+          const response = await fetch(`/api/test?url=${encodeURIComponent(url)}`);
+          const data = await response.json();
+          const elapsed = Date.now() - start;
+          const result: TestResult = {
+            site: name,
+            time: elapsed, success: response.ok && data.success,
+            ip: data.ip || data.result, error: data.error
+          };
+          setTestStats(prev => ({
+            total: prev.total + 1,
+            success: prev.success + (result.success ? 1 : 0),
+            fail: prev.fail + (result.success ? 0 : 1)
+          }));
+        } catch { }
+        if (!abortRef.current) setTimeout(runNext, 500);
+      };
+      runNext();
+    } catch {
+      isTestingRef.current = false;
+      toast.error("Failed to start tests");
+      setIsTesting(false);
+    }
+  }, [status.proxyCount, TEST_DURATION_LIMIT]);
+
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
+        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-3">
+              <div className="h-8 w-8 bg-slate-900 rounded-lg flex items-center justify-center">
+                <span className="text-white font-bold text-lg">G</span>
+              </div>
+              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Proxy Service</h1>
+            </div>
+
+            <div className="h-6 w-px bg-slate-200 mx-2" />
+
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className={`gap-1.5 ${status.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                <span className={`h-2 w-2 rounded-full ${status.online ? "bg-emerald-500" : "bg-red-500"}`} />
+                {status.online ? "System Online" : "System Offline"}
+              </Badge>
+              {status.proxyServiceReady && (
+                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100">Ready</Badge>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
+                  status.gost?.running
+                    ? "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-100"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md hover:shadow-lg border-emerald-700"
+                }`}
+                onClick={() => handleServiceAction("start")}
+                disabled={!!status.gost?.running}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" /> Start
+              </Button>
+              <Button
+                size="sm"
+                className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
+                  isTesting
+                    ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+                    : "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
+                }`}
+                onClick={isTesting ? stopTest : startTest}
+                disabled={!status.gost?.running}
+              >
+                {isTesting ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Activity className="h-3.5 w-3.5" />
+                )}
+                {isTesting ? "Testing..." : "Test"}
+              </Button>
+              <Button
+                size="sm"
+                className="h-9 px-3 gap-2 transition-all cursor-pointer bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg border-blue-700 disabled:opacity-50 disabled:shadow-none"
+                onClick={() => handleServiceAction("restart")}
+                disabled={!status.gost?.running}
+              >
+                <RotateCw className="h-3.5 w-3.5" /> Restart
+              </Button>
+              <Button
+                size="sm"
+                className="h-9 px-3 gap-2 transition-all cursor-pointer bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg border-red-700 disabled:opacity-50 disabled:shadow-none"
+                onClick={() => handleServiceAction("stop")}
+                disabled={!status.gost?.running}
+              >
+                <Square className="h-3.5 w-3.5 fill-current" /> Stop
+              </Button>
+            </div>
+
+            <div className="flex items-center gap-1">
+              <SettingsDialog onConfigUpdate={() => { fetchStatus(); refreshSettings(); }} />
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-9 w-9 text-muted-foreground hover:text-foreground cursor-pointer">
+                    <Info className="h-4 w-4" />
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>About GOST Proxy Service</DialogTitle>
+                    <DialogDescription>
+                      Professional management interface for GOST forwarding chains.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-4">
+                    <VersionBanner
+                      version={version?.version}
+                      commit={version?.commit}
+                      appName="Gost Proxy Service"
+                    />
+                    <div className="flex justify-between pt-2">
+                      <span className="text-sm text-muted-foreground">Repository</span>
+                      <a
+                        href="https://github.com/mchen-lab/gost-proxy-service"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-primary hover:underline cursor-pointer"
+                      >
+                        mchen-lab/gost-proxy-service
+                      </a>
+                    </div>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-7xl mx-auto p-6">
+        <div className="flex flex-col gap-6 h-[calc(100vh-140px)]">
+          <SystemStatus
+            settings={globalSettings?.system || { strategy: 'round', timeout: 10, maxRetries: 1 }}
+            proxyCount={status.proxyCount}
+            testUrlCount={testUrls.length}
+            testerStats={testStats}
+            pid={status.gost?.pid || null}
+            port={31131}
+          />
+
+          <section className="flex-1 min-h-0">
+            <LogViewer />
+          </section>
+        </div>
+      </main>
+
+      <AlertDialog open={showNoProxiesAlert} onOpenChange={setShowNoProxiesAlert}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>No Upstream Proxies Configured</AlertDialogTitle>
+            <AlertDialogDescription>
+              You need to configure at least one upstream proxy before running tests.
+              Click the Settings icon in the header to add your proxy servers.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction>Got it</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <Toaster />
+    </div>
   );
 }
 

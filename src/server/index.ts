@@ -1,21 +1,43 @@
 import { createApp } from "@mchen-lab/app-kit/backend";
+import { GostManager } from "./gostManager.js";
+import { WebSocketServer, WebSocket } from "ws";
 import { createServer } from "http";
-import express, { type Request, type Response } from "express";
+import axios from "axios";
+import { HttpsProxyAgent } from "https-proxy-agent";
+import { HttpProxyAgent } from "http-proxy-agent";
+import type { Request, Response } from "express";
+import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
-import { WebSocketServer, WebSocket } from "ws";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Define your config schema
-interface AppConfig {
-  // Add your config properties here
-  exampleSetting: string;
+// --- Config Types ---
+
+interface SystemSettings {
+  strategy: string; // round, random, fifo
+  maxRetries: number;
+  timeout: number;
 }
 
-// Default config values
-const defaultConfig: AppConfig = {
-  exampleSetting: "default-value",
+interface GlobalConfig {
+  system: SystemSettings;
+  proxies: string[];
+  testUrls: string[];
+}
+
+// Default config
+const defaultConfig: GlobalConfig = {
+  system: {
+    strategy: "round",
+    maxRetries: 1,
+    timeout: 10
+  },
+  proxies: [],
+  testUrls: [
+    "https://api.ipify.org?format=json",
+    "https://www.google.com"
+  ]
 };
 
 // Initialize AppKit
@@ -26,19 +48,20 @@ const appKit = createApp({
 });
 
 const app = appKit.app;
+let globalConfig = appKit.config as GlobalConfig;
 
 // Environment Variables
-const PORT = process.env.PORT || 31131;
-const startTime = Date.now();
+const PORT = process.env.PORT || 31130;  // Web UI + Backend API
+const GOST_API_URL = process.env.GOST_API_URL || "http://127.0.0.1:31132";  // GOST internal API
+const GOST_PROXY_URL = process.env.GOST_PROXY_URL || "http://127.0.0.1:31131";  // GOST proxy server
 const isProduction = process.env.NODE_ENV === "production";
 
-// Version info from build
-const VERSION = 'v' + (process.env.npm_package_version || "0.1.0") + (process.env.BUILD_METADATA || "");
-const GIT_COMMIT = process.env.GIT_COMMIT || "";
+// Parse GOST proxy URL
+const proxyUrlParsed = new URL(GOST_PROXY_URL);
+const GOST_PROXY_HOST = proxyUrlParsed.hostname;
+const GOST_PROXY_PORT = parseInt(proxyUrlParsed.port) || 8080;
 
-// =============================================================================
-// Logging Infrastructure (Real-time WebSocket logs)
-// =============================================================================
+// --- Log Infrastructure ---
 
 interface LogEntry {
   timestamp: string;
@@ -47,89 +70,320 @@ interface LogEntry {
 }
 
 const logs: LogEntry[] = [];
-const MAX_LOGS = 500;
+const MAX_LOGS = 1000;
 const wsClients: Set<WebSocket> = new Set();
 
-/**
- * Add a log entry and broadcast to all connected WebSocket clients.
- * Use this throughout your application for real-time log visibility.
- */
-function addLog(level: string, message: string) {
-  const entry: LogEntry = {
-    timestamp: new Date().toISOString(),
-    level,
-    message,
-  };
-  
-  logs.push(entry);
+function broadcastLog(log: LogEntry) {
+  logs.push(log);
   if (logs.length > MAX_LOGS) {
     logs.splice(0, logs.length - MAX_LOGS);
   }
 
-  const wsMessage = JSON.stringify({ type: "log", data: entry });
+  const message = JSON.stringify({ type: "log", data: log });
   wsClients.forEach((client) => {
     if (client.readyState === WebSocket.OPEN) {
-      client.send(wsMessage);
+      client.send(message);
     }
   });
 }
 
-// Log helper functions
+// Logger helper
 export const logger = {
-  info: (msg: string) => addLog("INFO", msg),
-  warn: (msg: string) => addLog("WARN", msg),
-  error: (msg: string) => addLog("ERROR", msg),
-  debug: (msg: string) => addLog("DEBUG", msg),
+  info: (msg: string) => broadcastLog({ timestamp: new Date().toISOString(), level: "INFO", message: msg }),
+  warn: (msg: string) => broadcastLog({ timestamp: new Date().toISOString(), level: "WARN", message: msg }),
+  error: (msg: string) => broadcastLog({ timestamp: new Date().toISOString(), level: "ERROR", message: msg }),
+  debug: (msg: string) => broadcastLog({ timestamp: new Date().toISOString(), level: "DEBUG", message: msg }),
 };
+
+// --- GOST Manager ---
+
+const GOST_BINARY_PATH = process.env.GOST_BINARY_PATH || undefined;
+const gostManager = new GostManager(GOST_BINARY_PATH);
+
+function getGostEnv() { return {}; }
+
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, stopping...');
+  await gostManager.stop();
+  process.exit(0);
+});
+
+// --- GOST v3 Config Helpers ---
+
+interface V3Node {
+  name: string;
+  addr: string;
+  connector: {
+    type: string;
+  };
+}
+
+async function updateGostChain() {
+  const proxies = globalConfig.proxies || [];
+  const nodes: V3Node[] = [];
+
+  for (const line of proxies) {
+    try {
+      const parts = line.split("://");
+      let protocol = "http";
+      let remaining = line;
+
+      if (parts.length > 1) {
+        protocol = parts[0];
+        remaining = parts[1];
+      }
+
+      if (!remaining || remaining.startsWith("#")) continue;
+
+      nodes.push({
+        name: `proxy-${nodes.length}`,
+        addr: remaining,
+        connector: { type: protocol }
+      });
+    } catch {
+      console.warn("Failed to parse proxy line:", line);
+    }
+  }
+
+  // Direct bypass mode - no upstream proxies, just passthrough
+  if (nodes.length === 0) {
+    const directServicePayload = {
+      name: "proxy-service",
+      addr: `:${GOST_PROXY_PORT}`,
+      handler: { type: "http" },  // No chain = direct connection
+      listener: { type: "tcp" }
+    };
+
+    try {
+      // Remove any existing chain
+      try { await axios.delete(`${GOST_API_URL}/config/chains/upstream-chain`); } catch { }
+      // Remove and recreate service in direct mode
+      try { await axios.delete(`${GOST_API_URL}/config/services/proxy-service`); } catch { }
+      await axios.post(`${GOST_API_URL}/config/services`, directServicePayload);
+
+      broadcastLog({
+        timestamp: new Date().toISOString(),
+        level: "INFO",
+        message: "🔄 Running in DIRECT BYPASS mode (no upstream proxies)",
+      });
+
+      return 0;
+    } catch (error) {
+      console.error("Failed to setup direct bypass:", error);
+      throw error;
+    }
+  }
+
+  // Normal mode with upstream proxies
+  const strategy = globalConfig.system.strategy || "round";
+
+  const chainPayload = {
+    name: "upstream-chain",
+    hops: [{
+      name: "hop-0",
+      selector: {
+        strategy: strategy,
+        maxFails: globalConfig.system.maxRetries,
+        failTimeout: `${globalConfig.system.timeout}s`
+      },
+      nodes: nodes
+    }]
+  };
+
+  const servicePayload = {
+    name: "proxy-service",
+    addr: `:${GOST_PROXY_PORT}`,
+    handler: {
+      type: "http",
+      chain: "upstream-chain"
+    },
+    listener: { type: "tcp" }
+  };
+
+  try {
+    try { await axios.delete(`${GOST_API_URL}/config/chains/upstream-chain`); } catch { }
+    await axios.post(`${GOST_API_URL}/config/chains`, chainPayload);
+    try { await axios.delete(`${GOST_API_URL}/config/services/proxy-service`); } catch { }
+    await axios.post(`${GOST_API_URL}/config/services`, servicePayload);
+
+    broadcastLog({
+      timestamp: new Date().toISOString(),
+      level: "INFO",
+      message: `Updated GOST v3 config with ${nodes.length} proxies`,
+    });
+
+    return nodes.length;
+  } catch (error) {
+    console.error("Failed to update GOST v3:", error);
+    throw error;
+  }
+}
+
+// Setup proxy config (always runs - either with proxies or in direct bypass mode)
+async function setupProxyConfig() {
+  await new Promise(r => setTimeout(r, 2000));
+  try {
+    await updateGostChain();
+  } catch (error) {
+    console.error("❌ Failed to setup proxy config:", error);
+  }
+}
+
+// --- GOST Log Handler ---
+gostManager.setLogCallback((logLine: string) => {
+  try {
+    const parsed = JSON.parse(logLine);
+    if (parsed.kind === "handler" && parsed.host) {
+      const host = parsed.host || "unknown";
+      const dst = parsed.dst || "direct";
+      const msg = parsed.msg || "";
+      if (msg.includes("<->")) {
+        broadcastLog({
+          timestamp: new Date().toISOString(),
+          level: "GOST",
+          message: `🔗 ${host} via ${dst}`,
+        });
+      }
+    }
+  } catch {
+    if (logLine.includes("error") || logLine.includes("Error")) {
+      broadcastLog({
+        timestamp: new Date().toISOString(), level: "ERROR", message: `GOST: ${logLine}`,
+      });
+    }
+  }
+});
 
 // =============================================================================
 // API Routes
 // =============================================================================
 
-// Status API
-app.get("/api/status", (_req: Request, res: Response) => {
-  const uptime = (Date.now() - startTime) / 1000;
-  res.json({
-    status: "online",
-    uptime: uptime,
-    timestamp: new Date().toISOString(),
-    port: Number(PORT),
-  });
+// Get current proxies
+app.get("/api/proxies", (_req: Request, res: Response) => {
+  res.json({ proxies: globalConfig.proxies });
 });
 
-// Version API
-app.get("/api/version", (_req: Request, res: Response) => {
-  res.json({
-    version: VERSION,
-    commit: GIT_COMMIT,
-  });
-});
-
-// Logs API (REST endpoints for log management)
-app.get("/api/logs", (_req: Request, res: Response) => {
-  res.json({ logs });
-});
-
-app.delete("/api/logs", (_req: Request, res: Response) => {
-  logs.length = 0;
-  res.json({ success: true });
-});
-
-// Example: Access config
-app.get("/api/config-example", (_req: Request, res: Response) => {
-  const config = appKit.config as AppConfig;
-  res.json({ exampleSetting: config.exampleSetting });
-});
-
-// Example: Update config
-app.post("/api/config-example", async (req: Request, res: Response) => {
+// Update proxies
+app.post("/api/proxies", async (req: Request, res: Response) => {
   try {
-    await appKit.updateConfig({ exampleSetting: req.body.exampleSetting });
-    logger.info(`Config updated: exampleSetting = ${req.body.exampleSetting}`);
+    const { proxyList } = req.body;
+    if (!proxyList || typeof proxyList !== "string") {
+      res.status(400).json({ error: "proxyList is required" });
+      return;
+    }
+
+    const lines = proxyList.split("\n");
+    globalConfig.proxies = lines.filter(line => line.trim() && !line.trim().startsWith("#"));
+
+    await updateGostChain();
+
+    // Save via AppKit
+    await appKit.saveConfig();
+
+    res.json({ success: true, count: globalConfig.proxies.length });
+  } catch (error: unknown) {
+    res.status(500).json({ error: error instanceof Error ? error.message : String(error) });
+  }
+});
+
+// GOST-specific settings
+app.post("/api/gost-settings", async (req: Request, res: Response) => {
+  try {
+    const settings = req.body;
+    globalConfig.system = { ...globalConfig.system, ...settings };
+
+    if (globalConfig.proxies.length > 0) {
+      updateGostChain().catch(err => console.error(err));
+    }
+
+    await appKit.saveConfig();
+    res.json({ success: true, settings: globalConfig.system });
+  } catch {
+    res.status(500).json({ error: "Failed to save settings" });
+  }
+});
+
+// Test URLs
+app.get("/api/test-urls", (_req: Request, res: Response) => {
+  res.json({ urls: globalConfig.testUrls });
+});
+
+app.post("/api/test-urls", async (req: Request, res: Response) => {
+  try {
+    const { urls } = req.body;
+    globalConfig.testUrls = urls;
+    await appKit.saveConfig();
     res.json({ success: true });
-  } catch (error) {
-    logger.error(`Failed to update config: ${error}`);
-    res.status(500).json({ error: "Failed to update config" });
+  } catch {
+    res.status(500).json({ error: "Failed to save test URLs" });
+  }
+});
+
+// Service Controls
+app.post("/api/service/restart", async (_req, res) => {
+  try {
+    await gostManager.restart(undefined, getGostEnv());
+    setupProxyConfig();
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "Failed to restart" }); }
+});
+
+app.post("/api/service/start", async (_req, res) => {
+  try {
+    gostManager.start(undefined, getGostEnv());
+    setupProxyConfig();
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "Failed to start" }); }
+});
+
+app.post("/api/service/stop", async (_req, res) => {
+  try {
+    await gostManager.stop();
+    res.json({ success: true });
+  } catch { res.status(500).json({ error: "Failed to stop" }); }
+});
+
+// GOST Status
+app.get("/api/gost-status", async (_req, res) => {
+  const gostStatus = gostManager.getStatus();
+  let apiResponding = false;
+  try {
+    await axios.get(`${GOST_API_URL}/config`, { timeout: 1000 });
+    apiResponding = true;
+  } catch { }
+  res.json({
+    online: gostStatus.running,
+    proxyServiceReady: apiResponding && globalConfig.proxies.length > 0,
+    proxyCount: globalConfig.proxies.length,
+    gost: gostStatus
+  });
+});
+
+// Logs
+app.get("/api/logs", (_req, res) => res.json({ logs }));
+app.delete("/api/logs", (_req, res) => { logs.length = 0; res.json({ success: true }); });
+
+// Proxy Test endpoint
+app.get("/api/test", async (req: Request, res: Response) => {
+  const url = req.query.url as string;
+  if (!url) return res.status(400).json({ error: "URL required" });
+
+  try {
+    const proxyUrl = `http://${GOST_PROXY_HOST}:${GOST_PROXY_PORT}`;
+    const isHttps = url.startsWith('https://');
+    const agent = isHttps ? new HttpsProxyAgent(proxyUrl) : new HttpProxyAgent(proxyUrl);
+
+    const response = await axios.get(url, {
+      httpAgent: isHttps ? undefined : agent,
+      httpsAgent: isHttps ? agent : undefined,
+      timeout: 10000,
+      validateStatus: (status) => status >= 200 && status < 400,
+    });
+
+    res.json({ success: true, status: response.status, data: response.data });
+  } catch (error: any) {
+    res.json({ success: false, error: error.message });
   }
 });
 
@@ -139,40 +393,35 @@ app.post("/api/config-example", async (req: Request, res: Response) => {
 
 async function start() {
   await appKit.initialize();
+  globalConfig = appKit.config as GlobalConfig;
 
   const server = createServer(app);
 
-  // ==========================================================================
   // WebSocket server for real-time logs
-  // Frontend LogViewer component connects to /ws/logs
-  // ==========================================================================
   const wss = new WebSocketServer({ server, path: "/ws/logs" });
   wss.on("connection", (ws: WebSocket) => {
     wsClients.add(ws);
-    // Send log history on connect
     ws.send(JSON.stringify({ type: "history", data: logs }));
     ws.on("close", () => wsClients.delete(ws));
   });
 
+  // Start GOST and setup proxy config
+  gostManager.start(undefined, getGostEnv());
+  setupProxyConfig();
+
   // Frontend Serving Logic
   if (isProduction) {
-    // Production: Serve built static files
     const distPath = path.join(__dirname, "../../dist");
     app.use(express.static(distPath));
-
-    // SPA fallback
     app.get("*", (_req: Request, res: Response) => {
       res.sendFile(path.join(distPath, "index.html"));
     });
   } else {
-    // Development: Use Vite middleware
     try {
       const vite = await import("vite");
-      
       const frontendDir = path.resolve(__dirname, "../frontend");
-      
       const viteServer = await vite.createServer({
-        server: { 
+        server: {
           middlewareMode: true,
           hmr: { server }
         },
@@ -181,14 +430,13 @@ async function start() {
         configFile: path.resolve(frontendDir, "../../vite.config.ts"),
       });
 
-      // Use Vite middleware for all routes except API
       app.use((req, res, next) => {
-        if (req.path.startsWith("/api")) {
+        if (req.path.startsWith("/api") || req.path.startsWith("/ws")) {
           return next();
         }
         viteServer.middlewares(req, res, next);
       });
-      
+
       console.log("🔥 Hot reload enabled via Vite Middleware");
     } catch (e) {
       console.error("Failed to start Vite middleware", e);
@@ -197,7 +445,7 @@ async function start() {
 
   server.on("error", (err: any) => {
     if (err.code === "EADDRINUSE") {
-      console.error(`❌ Port ${PORT} is already in use. Please check for zombie processes.`);
+      console.error(`❌ Port ${PORT} is already in use.`);
     } else {
       console.error(`❌ Server error: ${err.message}`);
     }

@@ -49,10 +49,10 @@ kill_port() {
             # Check if command is node-related (basename)
             local cmd_base=$(basename "$cmd" 2>/dev/null)
             
-            if [[ "$cmd_base" == "node" ]]; then
+            if [[ "$cmd_base" == "node" || "$cmd_base" == "gost" ]]; then
                 target_pids="$target_pids $pid"
             else
-                echo "⚠️  Warning: Process '$cmd' (PID: $pid) is using port $port. NOT killing it as it does not appear to be our server."
+                echo "⚠️  Warning: Process '$cmd' (PID: $pid) is using port $port. NOT killing it as it does not appear to be our server or GOST."
                 echo "   maybe a docker version is already running"
                 return 1
             fi
@@ -88,7 +88,7 @@ kill_port() {
 }
 
 start_server() {
-    echo "🚀 Starting gost-proxy-service on port 31131..."
+    echo "🚀 Starting gost-proxy-service on port 31130..."
 
     # Ensure logs/servers directory exists
     mkdir -p "$PROJECT_ROOT/logs"
@@ -118,14 +118,16 @@ cleanup() {
         kill $SERVER_PID 2>/dev/null
     fi
     # Also attempt to kill by port as a fallback
-    kill_port 31131 "server"
+    kill_port 31130 "server"
+    kill_port 31131 "proxy"
+    kill_port 31132 "gost-api"
     exit 0
 }
 
 trap cleanup INT TERM EXIT
 
-echo "🛑 Stopping any existing gost-proxy-service server..."
-if ! kill_port 31131 "server"; then
+echo "🛑 Stopping any existing gost-proxy-service components..."
+if ! kill_port 31130 "server" || ! kill_port 31131 "proxy" || ! kill_port 31132 "gost-api"; then
     echo "❌ restart aborted."
     exit 1
 fi
@@ -147,7 +149,9 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ gost-proxy-service is running!"
 echo ""
 echo "📍 Services:"
-echo "   • Web UI & API: http://localhost:31131"
+echo "   • Web UI & API: http://localhost:31130"
+echo "   • Proxy Server: http://localhost:31131"
+echo "   • Internal API: http://localhost:31132"
 echo ""
 echo "Press Ctrl+C to stop"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
