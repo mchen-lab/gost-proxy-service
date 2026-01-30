@@ -1,0 +1,10 @@
+{
+  "projectName": "Gost Proxy Service",
+  "packageJsonPath": ".",
+  "ghcrOrg": "mchen-lab",
+  "dockerHubUser": "xychenmsn",
+  "imageName": "gost-proxy-service",
+  "containerName": "gost-proxy-service",
+  "volumeName": "gost_proxy_service_data",
+  "ports": [31131]
+}
