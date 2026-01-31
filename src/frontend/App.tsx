@@ -1,20 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppKit } from "@mchen-lab/app-kit/frontend";
-import { VersionBanner, AboutDialog } from "@mchen-lab/app-kit/components";
+import { AboutDialog } from "@mchen-lab/app-kit/components";
 import logoImage from "./logo.png";
 import { SystemStatus } from "./components/SystemStatus";
 import { LogViewer } from "./components/LogViewer";
-import { SettingsDialog } from "./components/SettingsDialog";
+import { Layout } from "./components/Layout";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -26,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { Info, Play, Square, RotateCw, Activity, Loader2 } from "lucide-react";
+import { Play, Square, RotateCw, Activity, Loader2 } from "lucide-react";
 
 interface Status {
   online: boolean;
@@ -47,7 +39,7 @@ interface TestResult {
 }
 
 function App() {
-  const { version, settings: globalSettings, refreshSettings } = useAppKit();
+  const { settings: globalSettings, refreshSettings } = useAppKit();
   const [status, setStatus] = useState<Status>({
     online: false,
     proxyServiceReady: false,
@@ -62,7 +54,6 @@ function App() {
   const abortRef = useRef(false);
   const isTestingRef = useRef(false);
   const testTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [showAbout, setShowAbout] = useState(false);
   const TEST_DURATION_LIMIT = 2 * 60 * 1000;
 
   const fetchURLs = useCallback(async () => {
@@ -224,109 +215,79 @@ function App() {
     }
   }, [status.proxyCount, TEST_DURATION_LIMIT]);
 
+  // Status badges for the header
+  const statusBadges = (
+    <>
+      <Badge variant="outline" className={`gap-1.5 ${status.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+        <span className={`h-2 w-2 rounded-full ${status.online ? "bg-emerald-500" : "bg-red-500"}`} />
+        {status.online ? "System Online" : "System Offline"}
+      </Badge>
+      {status.proxyServiceReady && (
+        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100">Ready</Badge>
+      )}
+    </>
+  );
+
+  // Action buttons for the secondary bar
+  const secondaryBar = (
+    <>
+      <Button
+        size="sm"
+        className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
+          status.gost?.running
+            ? "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-100"
+            : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md hover:shadow-lg border-emerald-700"
+        }`}
+        onClick={() => handleServiceAction("start")}
+        disabled={!!status.gost?.running}
+      >
+        <Play className="h-3.5 w-3.5 fill-current" /> Start
+      </Button>
+      <Button
+        size="sm"
+        className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
+          isTesting
+            ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
+            : "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
+        }`}
+        onClick={isTesting ? stopTest : startTest}
+        disabled={!status.gost?.running}
+      >
+        {isTesting ? (
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+        ) : (
+          <Activity className="h-3.5 w-3.5" />
+        )}
+        {isTesting ? "Testing..." : "Test"}
+      </Button>
+      <Button
+        size="sm"
+        className="h-9 px-3 gap-2 transition-all cursor-pointer bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg border-blue-700 disabled:opacity-50 disabled:shadow-none"
+        onClick={() => handleServiceAction("restart")}
+        disabled={!status.gost?.running}
+      >
+        <RotateCw className="h-3.5 w-3.5" /> Restart
+      </Button>
+      <Button
+        size="sm"
+        className="h-9 px-3 gap-2 transition-all cursor-pointer bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg border-red-700 disabled:opacity-50 disabled:shadow-none"
+        onClick={() => handleServiceAction("stop")}
+        disabled={!status.gost?.running}
+      >
+        <Square className="h-3.5 w-3.5 fill-current" /> Stop
+      </Button>
+    </>
+  );
+
   return (
-    <div className="min-h-screen bg-slate-50">
-      <header className="bg-white border-b sticky top-0 z-10 shadow-sm">
-        <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-3">
-              <img 
-                src={logoImage} 
-                alt="Gost Proxy Service" 
-                className="h-8 w-8 rounded-lg shadow-sm"
-              />
-              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Proxy Service</h1>
-            </div>
-
-            <div className="h-6 w-px bg-slate-200 mx-2" />
-
-            <div className="flex items-center gap-2">
-              <Badge variant="outline" className={`gap-1.5 ${status.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-                <span className={`h-2 w-2 rounded-full ${status.online ? "bg-emerald-500" : "bg-red-500"}`} />
-                {status.online ? "System Online" : "System Offline"}
-              </Badge>
-              {status.proxyServiceReady && (
-                <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100">Ready</Badge>
-              )}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-6">
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
-                  status.gost?.running
-                    ? "bg-slate-100 text-slate-400 border-slate-200 hover:bg-slate-100"
-                    : "bg-emerald-600 text-white hover:bg-emerald-700 shadow-md hover:shadow-lg border-emerald-700"
-                }`}
-                onClick={() => handleServiceAction("start")}
-                disabled={!!status.gost?.running}
-              >
-                <Play className="h-3.5 w-3.5 fill-current" /> Start
-              </Button>
-              <Button
-                size="sm"
-                className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
-                  isTesting
-                    ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
-                    : "bg-white text-slate-700 hover:bg-slate-50 border-slate-200"
-                }`}
-                onClick={isTesting ? stopTest : startTest}
-                disabled={!status.gost?.running}
-              >
-                {isTesting ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <Activity className="h-3.5 w-3.5" />
-                )}
-                {isTesting ? "Testing..." : "Test"}
-              </Button>
-              <Button
-                size="sm"
-                className="h-9 px-3 gap-2 transition-all cursor-pointer bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg border-blue-700 disabled:opacity-50 disabled:shadow-none"
-                onClick={() => handleServiceAction("restart")}
-                disabled={!status.gost?.running}
-              >
-                <RotateCw className="h-3.5 w-3.5" /> Restart
-              </Button>
-              <Button
-                size="sm"
-                className="h-9 px-3 gap-2 transition-all cursor-pointer bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg border-red-700 disabled:opacity-50 disabled:shadow-none"
-                onClick={() => handleServiceAction("stop")}
-                disabled={!status.gost?.running}
-              >
-                <Square className="h-3.5 w-3.5 fill-current" /> Stop
-              </Button>
-            </div>
-
-            <div className="flex items-center gap-1">
-              <SettingsDialog onConfigUpdate={() => { fetchStatus(); fetchURLs(); refreshSettings(); }} />
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="h-9 w-9 text-muted-foreground hover:text-foreground cursor-pointer"
-                onClick={() => setShowAbout(true)}
-              >
-                <Info className="h-4 w-4" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <AboutDialog
-        isOpen={showAbout}
-        onOpenChange={setShowAbout}
-        appName="Gost Proxy Service"
-        version={version?.version}
-        commit={version?.commit}
-        repoUrl="https://github.com/mchen-lab/gost-proxy-service"
-        description="Professional management interface for GOST forwarding chains. Powered by @mchen-lab/app-kit."
-      />
-
-      <main className="max-w-7xl mx-auto p-6">
-        <div className="flex flex-col gap-6 h-[calc(100vh-140px)]">
+    <>
+      <Layout
+        title="Proxy Service"
+        logo={logoImage}
+        statusBadges={statusBadges}
+        secondaryBar={secondaryBar}
+      >
+        <div className="flex flex-col gap-4 h-[calc(100vh-160px)]">
           <SystemStatus
             settings={globalSettings?.system || { strategy: 'round', timeout: 10, maxRetries: 1 }}
             proxyCount={status.proxyCount}
@@ -340,7 +301,7 @@ function App() {
             <LogViewer />
           </section>
         </div>
-      </main>
+      </Layout>
 
       <AlertDialog open={showNoProxiesAlert} onOpenChange={setShowNoProxiesAlert}>
         <AlertDialogContent>
@@ -358,7 +319,7 @@ function App() {
       </AlertDialog>
 
       <Toaster />
-    </div>
+    </>
   );
 }
 
