@@ -4,6 +4,7 @@ import { Info, Settings } from 'lucide-react';
 import { AboutDialog } from './AboutDialog';
 import { ConfigDialog } from './ConfigDialog';
 import { useAppKit } from '@mchen-lab/app-kit/frontend';
+import logoImage from '../logo.png';
 
 interface LayoutProps {
   children: ReactNode;
@@ -21,11 +22,11 @@ export function Layout({ children, title = "Gost Proxy Service" }: LayoutProps) 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 bg-slate-900 rounded-lg flex items-center justify-center shadow-sm">
-                <span className="text-white font-bold text-lg select-none">
-                  {title.charAt(0)}
-                </span>
-              </div>
+              <img 
+                src={logoImage} 
+                alt={title} 
+                className="h-8 w-8 rounded-lg shadow-sm"
+              />
               <h1 className="text-lg font-semibold tracking-tight text-slate-900 hidden sm:block">
                 {title}
               </h1>

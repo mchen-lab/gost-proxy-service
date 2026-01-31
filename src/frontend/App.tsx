@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useAppKit } from "@mchen-lab/app-kit/frontend";
 import { VersionBanner, AboutDialog } from "@mchen-lab/app-kit/components";
+import logoImage from "./logo.png";
 import { SystemStatus } from "./components/SystemStatus";
 import { LogViewer } from "./components/LogViewer";
 import { SettingsDialog } from "./components/SettingsDialog";
@@ -229,9 +230,11 @@ function App() {
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
           <div className="flex items-center gap-6">
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 bg-slate-900 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-lg">G</span>
-              </div>
+              <img 
+                src={logoImage} 
+                alt="Gost Proxy Service" 
+                className="h-8 w-8 rounded-lg shadow-sm"
+              />
               <h1 className="text-lg font-semibold tracking-tight text-slate-900">Proxy Service</h1>
             </div>
 
