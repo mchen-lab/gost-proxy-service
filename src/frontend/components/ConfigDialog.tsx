@@ -180,14 +180,6 @@ export function ConfigDialog({
             {loading ? "Saving..." : "Save Configuration"}
           </Button>
         </DialogFooter>
-        
-        {/* Version info in corners */}
-        <div className="absolute bottom-2 left-4 text-xs text-muted-foreground opacity-50 pointer-events-none">
-          Commit: {version?.commit || 'unknown'}
-        </div>
-        <div className="absolute bottom-2 right-4 text-xs text-muted-foreground opacity-50 pointer-events-none">
-          v{version?.version || '0.0.0'}
-        </div>
       </DialogContent>
     </Dialog>
   );
