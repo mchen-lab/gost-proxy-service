@@ -39,6 +39,9 @@ jobs:
     - name: Build server
       run: npm run build:server
     
+    - name: Run tests
+      run: npm test
+    
     - name: Check for build errors
       run: |
         if [ ! -d "dist-server" ]; then

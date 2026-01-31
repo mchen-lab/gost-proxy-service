@@ -8,7 +8,8 @@
     "build": "npm run build:frontend && npm run build:server",
     "build:frontend": "vite build",
     "build:server": "tsc -p tsconfig.server.json",
-    "start": "NODE_ENV=production node dist-server/server/index.js"
+    "start": "NODE_ENV=production node dist-server/server/index.js",
+    "test": "vitest run"
   },
   "dependencies": {
     "@mchen-lab/app-kit": "file:libs/app-kit.tgz",
@@ -45,6 +46,7 @@
     "@vitejs/plugin-react": "^4.2.1",
     "tsx": "^4.7.0",
     "typescript": "^5.2.2",
-    "vite": "^5.0.0"
+    "vite": "^5.0.0",
+    "vitest": "^4.0.18"
   }
 }
