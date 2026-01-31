@@ -1,6 +1,7 @@
 {
   "name": "gost-proxy-service",
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "scripts": {
     "dev": "tsx watch --ignore 'vite.config.ts.timestamp*' src/server/index.ts",

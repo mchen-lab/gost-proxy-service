@@ -56,13 +56,18 @@ The system consists of three ports:
 - `GOST_PROXY_URL`: GOST proxy endpoint (Default: http://127.0.0.1:31131)
 - `GOST_BINARY_PATH`: Path to GOST binary (Default: /usr/local/bin/gost)
 
-### Data Persistence
+### Persistence & Logs
 
-All proxy configurations and settings are stored in `settings.json` in `/app/data`.
-Mount a volume to persist data across container restarts:
+By default, the service uses standardized directories for data and logs:
+
+- **`DATA_DIR`**: Location for configuration files (defaults to `/app/data`). Stores `settings.json`.
+- **`LOGS_DIR`**: Location for persistent log files (defaults to `/app/logs`). Stores `app.log`.
+
+Mount volumes to persist these across container restarts:
 
 ```bash
--v gost_proxy_service_data:/app/data
+-v gost_proxy_data:/app/data \
+-v gost_proxy_logs:/app/logs
 ```
 
 ## Usage

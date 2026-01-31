@@ -8,6 +8,7 @@ import { HttpProxyAgent } from "http-proxy-agent";
 import type { Request, Response } from "express";
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +65,9 @@ const GOST_PROXY_PORT = parseInt(proxyUrlParsed.port) || 8080;
 
 // --- Log Infrastructure ---
 
+const logsDir = appKit.getLogsDir();
+const logFilePath = path.resolve(logsDir, "app.log");
+
 interface LogEntry {
   timestamp: string;
   level: string;
@@ -79,6 +83,14 @@ function broadcastLog(log: LogEntry) {
   logs.push(log);
   if (logs.length > MAX_LOGS) {
     logs.splice(0, logs.length - MAX_LOGS);
+  }
+
+  // Write to log file if possible
+  try {
+    const logLine = `[${log.timestamp}] [${log.level}] ${log.message}${log.success !== undefined ? (log.success ? " ✅" : " ❌") : ""}\n`;
+    fs.appendFileSync(logFilePath, logLine);
+  } catch (err) {
+    // Silently fail if log file writing fails
   }
 
   const message = JSON.stringify({ type: "log", data: log });
