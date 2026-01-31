@@ -9,6 +9,19 @@
 # Get the absolute path of the project root
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ============================================================================
+# CONFIGURATION (populated from devops.config.json)
+# ============================================================================
+# All ports to kill on restart
+KILL_PORTS="31130 31131 31132"
+
+# Allowed process names to kill (regex pattern for matching)
+ALLOWED_PROCESSES="node|gost"
+
+# ============================================================================
+# HELPER FUNCTIONS
+# ============================================================================
+
 # Check if node_modules exists (dependencies installed)
 if [ ! -d "$PROJECT_ROOT/node_modules" ]; then
     echo "❌ Error: node_modules not found. Please run 'npm install' from the root directory first."
@@ -31,6 +44,7 @@ backup_log() {
 }
 
 # Function to kill process on a specific port
+# Only kills processes matching ALLOWED_PROCESSES pattern
 kill_port() {
     local port=$1
     local process_name=$2
@@ -38,7 +52,7 @@ kill_port() {
     echo "Checking for existing $process_name processes on port $port..."
     
     # use lsof to get PIDs - only target the listener to avoid conflicts with persistent client connections (e.g. Chrome)
-    local pids=$(lsof -nP -i :$port -sTCP:LISTEN -t 2>/dev/null)
+    local pids=$(lsof -ti :$port -sTCP:LISTEN 2>/dev/null)
     
     if [ ! -z "$pids" ]; then
         # Iterate through PIDs to check their command name
@@ -46,10 +60,11 @@ kill_port() {
         for pid in $pids; do
             # Get the command name for the PID
             local cmd=$(ps -p $pid -o comm= 2>/dev/null)
-            # Check if command is node-related (basename)
+            # Check if command matches allowed processes (basename)
             local cmd_base=$(basename "$cmd" 2>/dev/null)
             
-            if [[ "$cmd_base" == "node" ]]; then
+            # Check if process is in the allowed list using regex pattern
+            if [[ "$cmd_base" =~ ^($ALLOWED_PROCESSES)$ ]]; then
                 target_pids="$target_pids $pid"
             else
                 echo "⚠️  Warning: Process '$cmd' (PID: $pid) is using port $port. NOT killing it as it does not appear to be our server."
@@ -59,7 +74,7 @@ kill_port() {
         done
 
         if [ ! -z "$target_pids" ]; then
-            echo "Found existing node process(es) (PIDs:$target_pids). Killing..."
+            echo "Found existing process(es) (PIDs:$target_pids). Killing..."
             echo "$target_pids" | xargs kill -9 2>/dev/null || true
             sleep 2
             
@@ -68,7 +83,7 @@ kill_port() {
             if [ ! -z "$remaining_pids" ]; then
                 echo "⚠️  Warning: Port $port may still be in use."
             else
-                echo "✅ Successfully killed node processes on port $port."
+                echo "✅ Successfully killed processes on port $port."
             fi
         fi
     else
@@ -85,6 +100,20 @@ kill_port() {
              echo "$cleanup_pids" | xargs kill -9 2>/dev/null || true
         fi
     fi
+}
+
+# Function to kill all configured ports
+kill_all_ports() {
+    local abort_on_failure=${1:-false}
+    
+    for port in $KILL_PORTS; do
+        if ! kill_port $port "server"; then
+            if [ "$abort_on_failure" = "true" ]; then
+                return 1
+            fi
+        fi
+    done
+    return 0
 }
 
 start_server() {
@@ -118,14 +147,14 @@ cleanup() {
         kill $SERVER_PID 2>/dev/null
     fi
     # Also attempt to kill by port as a fallback
-    kill_port 31130 "server"
+    kill_all_ports
     exit 0
 }
 
 trap cleanup INT TERM EXIT
 
 echo "🛑 Stopping any existing gost-proxy-service server..."
-if ! kill_port 31130 "server"; then
+if ! kill_all_ports "true"; then
     echo "❌ restart aborted."
     exit 1
 fi
