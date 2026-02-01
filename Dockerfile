@@ -44,8 +44,8 @@ ARG TARGETARCH
 # Install basic tools and GOST
 RUN apk add --no-cache ca-certificates curl && \
     case "${TARGETARCH}" in \
-        "amd64") GOST_ARCH="linux-amd64" ;; \
-        "arm64") GOST_ARCH="linux-arm64" ;; \
+        "amd64") GOST_ARCH="linux_amd64" ;; \
+        "arm64") GOST_ARCH="linux_arm64" ;; \
         *) echo "Unsupported architecture: ${TARGETARCH}"; exit 1 ;; \
     esac && \
     curl -L "https://github.com/go-gost/gost/releases/download/v3.2.6/gost_3.2.6_${GOST_ARCH}.tar.gz" -o gost.tar.gz && \
