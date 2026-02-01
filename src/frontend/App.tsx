@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Toaster } from "@/components/ui/sonner";
 import { toast } from "sonner";
-import { Play, Square, RotateCw, Activity, Loader2 } from "lucide-react";
+import { Play, Square, Activity, Loader2 } from "lucide-react";
 
 interface Status {
   online: boolean;
@@ -217,15 +217,10 @@ function App() {
 
   // Status badges for the header
   const statusBadges = (
-    <>
-      <Badge variant="outline" className={`gap-1.5 ${status.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
-        <span className={`h-2 w-2 rounded-full ${status.online ? "bg-emerald-500" : "bg-red-500"}`} />
-        {status.online ? "System Online" : "System Offline"}
-      </Badge>
-      {status.proxyServiceReady && (
-        <Badge variant="secondary" className="bg-blue-50 text-blue-700 border-blue-100">Ready</Badge>
-      )}
-    </>
+    <Badge variant="outline" className={`gap-1.5 ${status.online ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+      <span className={`h-2 w-2 rounded-full ${status.online ? "bg-emerald-500" : "bg-red-500"}`} />
+      {status.online ? "Running" : "Stopped"}
+    </Badge>
   );
 
   // Action buttons for the secondary bar
@@ -245,6 +240,14 @@ function App() {
       </Button>
       <Button
         size="sm"
+        className="h-9 px-3 gap-2 transition-all cursor-pointer bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg border-red-700 disabled:opacity-50 disabled:shadow-none"
+        onClick={() => handleServiceAction("stop")}
+        disabled={!status.gost?.running}
+      >
+        <Square className="h-3.5 w-3.5 fill-current" /> Stop
+      </Button>
+      <Button
+        size="sm"
         className={`h-9 px-3 gap-2 transition-all cursor-pointer ${
           isTesting
             ? "bg-amber-100 text-amber-700 border-amber-200 hover:bg-amber-200"
@@ -259,22 +262,6 @@ function App() {
           <Activity className="h-3.5 w-3.5" />
         )}
         {isTesting ? "Testing..." : "Test"}
-      </Button>
-      <Button
-        size="sm"
-        className="h-9 px-3 gap-2 transition-all cursor-pointer bg-blue-600 text-white hover:bg-blue-700 shadow-md hover:shadow-lg border-blue-700 disabled:opacity-50 disabled:shadow-none"
-        onClick={() => handleServiceAction("restart")}
-        disabled={!status.gost?.running}
-      >
-        <RotateCw className="h-3.5 w-3.5" /> Restart
-      </Button>
-      <Button
-        size="sm"
-        className="h-9 px-3 gap-2 transition-all cursor-pointer bg-red-600 text-white hover:bg-red-700 shadow-md hover:shadow-lg border-red-700 disabled:opacity-50 disabled:shadow-none"
-        onClick={() => handleServiceAction("stop")}
-        disabled={!status.gost?.running}
-      >
-        <Square className="h-3.5 w-3.5 fill-current" /> Stop
       </Button>
     </>
   );
