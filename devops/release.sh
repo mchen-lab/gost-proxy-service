@@ -123,51 +123,10 @@ echo ""
 echo "🎉 Release $TAG_NAME completed successfully!"
 
 echo ""
-echo "=== 🐳 Building and Publishing Production Image ==="
-
-# Define Image Names (re-read in case they changed, though unlikely)
-GHCR_IMAGE="ghcr.io/$GHCR_ORG/$IMAGE_NAME"
-DOCKERHUB_IMAGE="$DOCKERHUB_USER/$IMAGE_NAME"
-
-BUILDER_NAME="${IMAGE_NAME}-builder"
-
-# Setup buildx
-if ! docker buildx inspect "$BUILDER_NAME" > /dev/null 2>&1; then
-    echo "Creating new buildx builder..."
-    docker buildx create --name "$BUILDER_NAME" --use
-    docker buildx inspect --bootstrap
-else
-    docker buildx use "$BUILDER_NAME"
-fi
-
-# Build Metadata for Prod
-BUILD_META="-prod-$(date +%Y%m%d)"
-COMMIT_HASH=$(git rev-parse --short HEAD)
-
-# Tags
-# We push:
-# 1. vX.Y.Z
-# 2. vX.Y
-# 3. vX
-# 4. latest
-TAGS="-t $GHCR_IMAGE:$VERSION_NUM -t $GHCR_IMAGE:latest"
-TAGS="$TAGS -t $GHCR_IMAGE:$MAJOR.$MINOR -t $GHCR_IMAGE:$MAJOR"
-
-if [ -n "$DOCKERHUB_USER" ]; then
-    TAGS="$TAGS -t $DOCKERHUB_IMAGE:$VERSION_NUM -t $DOCKERHUB_IMAGE:latest"
-    TAGS="$TAGS -t $DOCKERHUB_IMAGE:$MAJOR.$MINOR -t $DOCKERHUB_IMAGE:$MAJOR"
-fi
-
-echo "Building with versions: $VERSION_NUM $BUILD_META"
-echo "Commit: $COMMIT_HASH"
-
-docker buildx build \
-  --platform linux/amd64,linux/arm64 \
-  --build-arg BUILD_METADATA="$BUILD_META" \
-  --build-arg GIT_COMMIT="$COMMIT_HASH" \
-  $TAGS \
-  --push \
-  .
+echo "=== 🐳 Production Build & Publish ==="
+echo "The release tag '$TAG_NAME' has been pushed."
+echo "GitHub Actions will now automatically build and publish the production image."
+echo "Monitor progress here: https://github.com/$(git remote get-url origin | sed 's/.*github.com[:\/]//;s/\.git$//')/actions"
 
 echo ""
-echo "✅ Production build published!"
+echo "✅ Release process initiated!"
