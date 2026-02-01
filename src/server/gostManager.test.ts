@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { GostManager } from "./gostManager";
+import { GostManager } from "./gostManager.js";
 import { spawn } from "child_process";
 import fs from "fs";
 
