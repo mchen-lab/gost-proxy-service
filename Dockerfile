@@ -66,7 +66,10 @@ COPY package*.json ./
 COPY libs ./libs
 
 # Install only production dependencies
-RUN npm ci --only=production
+RUN npm ci --only=production && \
+    # Clean up caches to reduce image size
+    rm -rf /root/.cache && \
+    rm -rf /root/.npm
 
 # Copy built assets from builder
 COPY --from=builder /app/dist ./dist
