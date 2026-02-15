@@ -16,6 +16,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // --- Config Types ---
 
 interface SystemSettings {
+  noProxy: boolean;
   strategy: string; // round, random, fifo
   maxRetries: number;
   timeout: number;
@@ -30,6 +31,7 @@ interface GlobalConfig {
 // Default config
 const defaultConfig: GlobalConfig = {
   system: {
+    noProxy: false,
     strategy: "round",
     maxRetries: 1,
     timeout: 10
@@ -134,7 +136,8 @@ interface V3Node {
 }
 
 async function updateGostChain() {
-  const proxies = globalConfig.proxies || [];
+  // If noProxy mode is enabled, force direct bypass regardless of proxy list
+  const proxies = globalConfig.system.noProxy ? [] : (globalConfig.proxies || []);
   const nodes: V3Node[] = [];
 
   for (const line of proxies) {
@@ -368,8 +371,9 @@ app.get("/api/gost-status", async (_req, res) => {
   } catch { }
   res.json({
     online: gostStatus.running,
-    proxyServiceReady: apiResponding && globalConfig.proxies.length > 0,
-    proxyCount: globalConfig.proxies.length,
+    proxyServiceReady: apiResponding && !globalConfig.system.noProxy && globalConfig.proxies.length > 0,
+    proxyCount: globalConfig.system.noProxy ? 0 : globalConfig.proxies.length,
+    noProxy: globalConfig.system.noProxy,
     gost: gostStatus
   });
 });

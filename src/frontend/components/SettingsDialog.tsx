@@ -7,6 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 
 interface AppSettings {
+  noProxy: boolean;
   strategy: string;
   maxRetries: number;
   timeout: number;
@@ -19,6 +20,7 @@ interface SettingsDialogProps {
 export function SettingsDialog({ onConfigUpdate }: SettingsDialogProps) {
   // Data States
   const [settings, setSettings] = useState<AppSettings>({
+    noProxy: false,
     strategy: "round",
     maxRetries: 1,
     timeout: 10
@@ -92,6 +94,19 @@ export function SettingsDialog({ onConfigUpdate }: SettingsDialogProps) {
       label: "Parameters",
       content: (
         <div className="space-y-4">
+          <div className="grid grid-cols-4 items-center gap-4">
+            <Label htmlFor="noProxy" className="text-right">No Proxy</Label>
+            <div className="col-span-3 flex items-center gap-3">
+              <input
+                id="noProxy"
+                type="checkbox"
+                checked={settings.noProxy}
+                onChange={(e) => setSettings({ ...settings, noProxy: e.target.checked })}
+                className="h-4 w-4 rounded border-gray-300 accent-blue-600 cursor-pointer"
+              />
+              <span className="text-xs text-muted-foreground">Bypass all proxies (direct connection)</span>
+            </div>
+          </div>
           <div className="grid grid-cols-4 items-center gap-4">
             <Label htmlFor="strategy" className="text-right">Strategy</Label>
             <Select value={settings.strategy} onValueChange={(val) => setSettings({ ...settings, strategy: val })}>

@@ -7,6 +7,7 @@ interface SystemStatusProps {
     timeout: number;
   };
   proxyCount: number;
+  noProxy: boolean;
   testUrlCount: number;
   testerStats: {
     total: number;
@@ -17,7 +18,7 @@ interface SystemStatusProps {
   pid: number | null;
 }
 
-export function SystemStatus({ settings, proxyCount, testUrlCount, testerStats, port, pid }: SystemStatusProps) {
+export function SystemStatus({ settings, proxyCount, noProxy, testUrlCount, testerStats, port, pid }: SystemStatusProps) {
   const errorRate = testerStats.total > 0 
     ? ((testerStats.fail / testerStats.total) * 100).toFixed(1) 
     : "0.0";
@@ -45,7 +46,9 @@ export function SystemStatus({ settings, proxyCount, testUrlCount, testerStats, 
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Upstreams</span>
-            <span className="font-mono text-sm font-medium text-slate-900">{proxyCount}</span>
+            <span className={`font-mono text-sm font-medium ${noProxy ? 'text-amber-600' : 'text-slate-900'}`}>
+              {noProxy ? 'NO PROXY' : proxyCount}
+            </span>
           </div>
           <div className="flex flex-col gap-1">
             <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Testing URLs</span>

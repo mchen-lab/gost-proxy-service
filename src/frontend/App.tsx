@@ -24,6 +24,7 @@ interface Status {
   online: boolean;
   proxyServiceReady: boolean;
   proxyCount: number;
+  noProxy?: boolean;
   gost?: {
     running: boolean;
     pid: number | null;
@@ -276,8 +277,9 @@ function App() {
       >
         <div className="flex flex-col gap-4 h-[calc(100vh-160px)]">
           <SystemStatus
-            settings={globalSettings?.system || { strategy: 'round', timeout: 10, maxRetries: 1 }}
+            settings={globalSettings?.system || { noProxy: false, strategy: 'round', timeout: 10, maxRetries: 1 }}
             proxyCount={status.proxyCount}
+            noProxy={status.noProxy || false}
             testUrlCount={testUrls.length}
             testerStats={testStats}
             pid={status.gost?.pid || null}
