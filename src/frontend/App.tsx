@@ -138,7 +138,7 @@ function App() {
     if (isTestingRef.current) return;
     isTestingRef.current = true;
 
-    if (status.proxyCount === 0) {
+    if (status.proxyCount === 0 && !status.noProxy) {
       isTestingRef.current = false;
       setShowNoProxiesAlert(true);
       return;

@@ -310,9 +310,8 @@ app.post("/api/gost-settings", async (req: Request, res: Response) => {
     const settings = req.body;
     globalConfig.system = { ...globalConfig.system, ...settings };
 
-    if (globalConfig.proxies.length > 0) {
-      updateGostChain().catch(err => console.error(err));
-    }
+    // Always update gost chain — handles both direct bypass (noProxy) and upstream proxy modes
+    updateGostChain().catch(err => console.error(err));
 
     await appKit.saveConfig();
     res.json({ success: true, settings: globalConfig.system });
