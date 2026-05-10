@@ -20,6 +20,8 @@ interface SystemSettings {
   strategy: string; // round, random, fifo
   maxRetries: number;
   timeout: number;
+  proxyUsername?: string;
+  proxyPassword?: string;
 }
 
 interface GlobalConfig {
@@ -140,6 +142,14 @@ async function updateGostChain() {
   const proxies = globalConfig.system.noProxy ? [] : (globalConfig.proxies || []);
   const nodes: V3Node[] = [];
 
+  let auth;
+  if (globalConfig.system.proxyUsername && globalConfig.system.proxyPassword) {
+    auth = {
+      username: globalConfig.system.proxyUsername,
+      password: globalConfig.system.proxyPassword
+    };
+  }
+
   for (const line of proxies) {
     try {
       const parts = line.split("://");
@@ -153,10 +163,29 @@ async function updateGostChain() {
 
       if (!remaining || remaining.startsWith("#")) continue;
 
+      let nodeAuth = auth;
+      let nodeAddr = remaining;
+      
+      // Parse inline auth if present (e.g. user:pass@ip:port)
+      if (remaining.includes('@')) {
+        const atSplit = remaining.split('@');
+        nodeAddr = atSplit[1];
+        const authSplit = atSplit[0].split(':');
+        if (authSplit.length >= 2) {
+          nodeAuth = {
+            username: authSplit[0],
+            password: authSplit.slice(1).join(':')
+          };
+        }
+      }
+
       nodes.push({
         name: `proxy-${nodes.length}`,
-        addr: remaining,
-        connector: { type: protocol }
+        addr: nodeAddr,
+        connector: { 
+          type: protocol,
+          ...(nodeAuth && { auth: nodeAuth })
+        }
       });
     } catch {
       console.warn("Failed to parse proxy line:", line);
