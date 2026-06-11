@@ -17,11 +17,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 interface SystemSettings {
   noProxy: boolean;
-  strategy: string; // round, random, fifo
+  strategy: string; // round, random, fifo, slow-round
   maxRetries: number;
   timeout: number;
   proxyUsername?: string;
   proxyPassword?: string;
+  slowRotateSeconds?: number;
 }
 
 interface GlobalConfig {
@@ -36,7 +37,8 @@ const defaultConfig: GlobalConfig = {
     noProxy: false,
     strategy: "round",
     maxRetries: 1,
-    timeout: 10
+    timeout: 10,
+    slowRotateSeconds: 30
   },
   proxies: [],
   testUrls: [
@@ -223,17 +225,27 @@ async function updateGostChain() {
 
   // Normal mode with upstream proxies
   const strategy = globalConfig.system.strategy || "round";
+  let selectorStrategy = strategy;
+  let activeNodes = nodes;
+
+  if (strategy === "slow-round") {
+    selectorStrategy = "round";
+    if (nodes.length > 0) {
+      const idx = currentProxyIndex % nodes.length;
+      activeNodes = [nodes[idx]];
+    }
+  }
 
   const chainPayload = {
     name: "upstream-chain",
     hops: [{
       name: "hop-0",
       selector: {
-        strategy: strategy,
+        strategy: selectorStrategy,
         maxFails: globalConfig.system.maxRetries,
         failTimeout: `${globalConfig.system.timeout}s`
       },
-      nodes: nodes
+      nodes: activeNodes
     }]
   };
 
@@ -253,11 +265,19 @@ async function updateGostChain() {
     try { await axios.delete(`${GOST_API_URL}/config/services/proxy-service`); } catch { }
     await axios.post(`${GOST_API_URL}/config/services`, servicePayload);
 
-    broadcastLog({
-      timestamp: new Date().toISOString(),
-      level: "INFO",
-      message: `Updated GOST v3 config with ${nodes.length} proxies`,
-    });
+    if (strategy === "slow-round" && activeNodes.length > 0) {
+      broadcastLog({
+        timestamp: new Date().toISOString(),
+        level: "INFO",
+        message: `🔄 Active Proxy Node: ${activeNodes[0].addr} (Index ${currentProxyIndex % nodes.length})`,
+      });
+    } else {
+      broadcastLog({
+        timestamp: new Date().toISOString(),
+        level: "INFO",
+        message: `Updated GOST v3 config with ${nodes.length} proxies (Strategy: ${strategy})`,
+      });
+    }
 
     return nodes.length;
   } catch (error) {
@@ -266,11 +286,44 @@ async function updateGostChain() {
   }
 }
 
+// --- Slow Rotation Timer State ---
+let rotationInterval: NodeJS.Timeout | null = null;
+let currentProxyIndex = 0;
+
+function startSlowRotation() {
+  if (rotationInterval) {
+    clearInterval(rotationInterval);
+    rotationInterval = null;
+  }
+
+  const strategy = globalConfig.system.strategy || "round";
+  const noProxy = globalConfig.system.noProxy || false;
+  const proxies = globalConfig.proxies || [];
+
+  if (strategy === "slow-round" && !noProxy && proxies.length > 0) {
+    const intervalSeconds = globalConfig.system.slowRotateSeconds || 30;
+    broadcastLog({
+      timestamp: new Date().toISOString(),
+      level: "INFO",
+      message: `⏱️ Starting Slow Rotation scheduler (every ${intervalSeconds} seconds)`,
+    });
+    rotationInterval = setInterval(async () => {
+      currentProxyIndex++;
+      try {
+        await updateGostChain();
+      } catch (error) {
+        console.error("Failed to rotate proxy during slow rotation:", error);
+      }
+    }, intervalSeconds * 1000);
+  }
+}
+
 // Setup proxy config (always runs - either with proxies or in direct bypass mode)
 async function setupProxyConfig() {
   await new Promise(r => setTimeout(r, 2000));
   try {
     await updateGostChain();
+    startSlowRotation();
   } catch (error) {
     console.error("❌ Failed to setup proxy config:", error);
   }
@@ -323,6 +376,7 @@ app.post("/api/proxies", async (req: Request, res: Response) => {
     globalConfig.proxies = lines.filter(line => line.trim() && !line.trim().startsWith("#"));
 
     await updateGostChain();
+    startSlowRotation();
 
     // Save via AppKit
     await appKit.saveConfig();
@@ -340,7 +394,7 @@ app.post("/api/gost-settings", async (req: Request, res: Response) => {
     globalConfig.system = { ...globalConfig.system, ...settings };
 
     // Always update gost chain — handles both direct bypass (noProxy) and upstream proxy modes
-    updateGostChain().catch(err => console.error(err));
+    updateGostChain().then(() => startSlowRotation()).catch(err => console.error(err));
 
     await appKit.saveConfig();
     res.json({ success: true, settings: globalConfig.system });

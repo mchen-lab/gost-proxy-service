@@ -117,6 +117,7 @@ export function SettingsDialog({ onConfigUpdate }: SettingsDialogProps) {
                 <SelectItem value="round">Round Robin</SelectItem>
                 <SelectItem value="random">Random</SelectItem>
                 <SelectItem value="fifo">FIFO</SelectItem>
+                <SelectItem value="slow-round">Slow Round Robin (30s)</SelectItem>
               </SelectContent>
             </Select>
           </div>
